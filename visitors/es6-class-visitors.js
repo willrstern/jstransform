@@ -32,10 +32,12 @@ var SUPER_PROTO_IDENT_PREFIX = '____SuperProtoOf';
 
 var _anonClassUUIDCounter = 0;
 var _mungedSymbolMaps = {};
+var _settersAndGetters = {};
 
 function resetSymbols() {
   _anonClassUUIDCounter = 0;
   _mungedSymbolMaps = {};
+  _settersAndGetters = {};
 }
 
 /**
@@ -48,6 +50,17 @@ function resetSymbols() {
 function _generateAnonymousClassName(state) {
   var mungeNamespace = state.mungeNamespace || '';
   return '____Class' + mungeNamespace + base62.encode(_anonClassUUIDCounter++);
+}
+
+/**
+ * Used the store a reference to the property descriptor for getter ans setter
+ * methods.
+ *
+ * @param {object} state
+ * @return {string}
+ */
+function _generateDescriptorVar(state) {
+  return '____' + state.className + 'Descr';
 }
 
 /**
@@ -142,7 +155,7 @@ function _shouldMungeIdentifier(node, state) {
  * @param {object} state
  */
 function visitClassMethod(traverse, node, path, state) {
-  if (node.kind === 'get' || node.kind === 'set') {
+  if (!state.g.opts.es5 && (node.kind === 'get' || node.kind === 'set')) {
     throw new Error(
       'This transform does not support ' + node.kind + 'ter methods for ES6 ' +
       'classes. (line: ' + node.loc.start.line + ', col: ' +
@@ -170,6 +183,8 @@ visitClassMethod.test = function(node, path, state) {
  */
 function visitClassFunctionExpression(traverse, node, path, state) {
   var methodNode = path[0];
+  var isGetter = state.g.opts.es5 && methodNode.kind === 'get';
+  var isSetter = state.g.opts.es5 && methodNode.kind === 'set';
 
   state = utils.updateState(state, {
     methodFuncNode: node
@@ -180,6 +195,7 @@ function visitClassFunctionExpression(traverse, node, path, state) {
   } else {
     var methodAccessor;
     var prototypeOrStatic = methodNode.static ? '' : '.prototype';
+    var objectAccessor = state.className + prototypeOrStatic;
 
     if (methodNode.key.type === Syntax.Identifier) {
       // foo() {}
@@ -187,17 +203,52 @@ function visitClassFunctionExpression(traverse, node, path, state) {
       if (_shouldMungeIdentifier(methodNode.key, state)) {
         methodAccessor = _getMungedName(methodAccessor, state);
       }
-      methodAccessor = '.' + methodAccessor;
+      if (!(isGetter || isSetter)) {
+        methodAccessor = '.' + methodAccessor;
+      }
     } else if (methodNode.key.type === Syntax.Literal) {
-      // 'foo bar'() {}
-      methodAccessor = '[' + JSON.stringify(methodNode.key.value) + ']';
+      if (isGetter || isSetter) {
+        // get 'foo bar'() {} | set 'foo bar'() {}
+        methodAccessor = methodNode.key.value;
+      } else {
+        // 'foo bar'() {}
+        methodAccessor = '[' + JSON.stringify(methodNode.key.value) + ']';
+      }
     }
 
-    utils.append(
-      state.className + prototypeOrStatic +
-      methodAccessor + '=function',
-      state
-    );
+    if (isSetter || isGetter) {
+      // Since setters and getters are defined separately, we have to get the
+      // previous definition before overwrite it.
+      var descriptorVar = _generateDescriptorVar(state);
+      // var ____ClassDescr = Object.getOwnPropertyDescriptor(...);
+      var descriptorDeclaration =
+        _settersAndGetters[objectAccessor + methodAccessor] ?
+        'var ' + descriptorVar + '=Object.getOwnPropertyDescriptor(' +
+        objectAccessor + ',' + JSON.stringify(methodAccessor) + ');' :
+        '';
+      var descriptorAccessor = descriptorVar + (isSetter ? '.get' : '.set');
+      var existingGetterOrSetter = descriptorDeclaration ?
+         (isSetter ? 'get:' : 'set:') + descriptorAccessor + ',' :
+         '';
+
+      utils.append(
+        descriptorDeclaration +
+        'Object.defineProperty(' +
+          objectAccessor + ',' +
+          JSON.stringify(methodAccessor) + ',' +
+          '{enumerable:true,configurable:true,' +
+          existingGetterOrSetter +
+          methodNode.kind + ':function',
+        state
+      );
+      // remember that we already created a getter or setter for this property
+      _settersAndGetters[objectAccessor + methodAccessor] = true;
+    } else {
+      utils.append(
+        objectAccessor + methodAccessor + '=function',
+        state
+      );
+    }
   }
   utils.move(methodNode.key.range[1], state);
 
@@ -229,6 +280,9 @@ function visitClassFunctionExpression(traverse, node, path, state) {
   utils.catchup(node.body.range[1], state);
 
   if (methodNode.key.name !== 'constructor') {
+    if (isGetter || isSetter) {
+      utils.append('})', state);
+    }
     utils.append(';', state);
   }
   return false;
