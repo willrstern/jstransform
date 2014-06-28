@@ -142,7 +142,7 @@ function _shouldMungeIdentifier(node, state) {
  * @param {object} state
  */
 function visitClassMethod(traverse, node, path, state) {
-  if (node.kind === 'get' || node.kind === 'set') {
+  if (!state.g.opts.es5 && (node.kind === 'get' || node.kind === 'set')) {
     throw new Error(
       'This transform does not support ' + node.kind + 'ter methods for ES6 ' +
       'classes. (line: ' + node.loc.start.line + ', col: ' +
@@ -170,6 +170,9 @@ visitClassMethod.test = function(node, path, state) {
  */
 function visitClassFunctionExpression(traverse, node, path, state) {
   var methodNode = path[0];
+  var isGetter = state.g.opts.es5 && methodNode.kind === 'get';
+  var isSetter = state.g.opts.es5 && methodNode.kind === 'set';
+  var hasPreviousGetterSetter = false;
 
   state = utils.updateState(state, {
     methodFuncNode: node
@@ -180,6 +183,7 @@ function visitClassFunctionExpression(traverse, node, path, state) {
   } else {
     var methodAccessor;
     var prototypeOrStatic = methodNode.static ? '' : '.prototype';
+    var objectAccessor = state.className + prototypeOrStatic;
 
     if (methodNode.key.type === Syntax.Identifier) {
       // foo() {}
@@ -187,17 +191,49 @@ function visitClassFunctionExpression(traverse, node, path, state) {
       if (_shouldMungeIdentifier(methodNode.key, state)) {
         methodAccessor = _getMungedName(methodAccessor, state);
       }
-      methodAccessor = '.' + methodAccessor;
+      if (!(isGetter || isSetter)) {
+        methodAccessor = '.' + methodAccessor;
+      }
     } else if (methodNode.key.type === Syntax.Literal) {
-      // 'foo bar'() {}
-      methodAccessor = '[' + JSON.stringify(methodNode.key.value) + ']';
+      if (isGetter || isSetter) {
+        // get 'foo bar'() {} | set 'foo bar'() {}
+        methodAccessor = methodNode.key.value;
+      } else {
+        // 'foo bar'() {}
+        methodAccessor = '[' + JSON.stringify(methodNode.key.value) + ']';
+      }
     }
 
-    utils.append(
-      state.className + prototypeOrStatic +
-      methodAccessor + '=function',
-      state
-    );
+    if (isSetter || isGetter) {
+      // Since setters and getters are defined separately, we have to get the
+      // previous definition before overwrite it.
+      // var Descr = Object.getOwnPropertyDescriptor(...);
+      hasPreviousGetterSetter =
+        state.gettersAndSetters[objectAccessor + methodAccessor];
+      var prefix = hasPreviousGetterSetter ?  '(function(){' : '';
+      var descriptorAccessor = 'arguments[0]'+ (isSetter ? '.get' : '.set');
+      var existingGetterOrSetter = hasPreviousGetterSetter ?
+         (isSetter ? 'get:' : 'set:') + descriptorAccessor + ',' :
+         '';
+
+      utils.append(
+        prefix +
+        'Object.defineProperty(' +
+          objectAccessor + ',' +
+          JSON.stringify(methodAccessor) + ',' +
+          '{enumerable:true,configurable:true,' +
+          existingGetterOrSetter +
+          methodNode.kind + ':function',
+        state
+      );
+      // remember that we already created a getter or setter for this property
+      state.gettersAndSetters[objectAccessor + methodAccessor] = true;
+    } else {
+      utils.append(
+        objectAccessor + methodAccessor + '=function',
+        state
+      );
+    }
   }
   utils.move(methodNode.key.range[1], state);
 
@@ -229,6 +265,16 @@ function visitClassFunctionExpression(traverse, node, path, state) {
   utils.catchup(node.body.range[1], state);
 
   if (methodNode.key.name !== 'constructor') {
+    if (isGetter || isSetter) {
+      utils.append('})', state);
+      if (hasPreviousGetterSetter) {
+        var propertyDescriptor =
+          'Object.getOwnPropertyDescriptor(' +
+          objectAccessor + ',' + JSON.stringify(methodAccessor) +
+          ')';
+        utils.append(';}(' + propertyDescriptor + '))', state);
+      }
+    }
     utils.append(';', state);
   }
   return false;
@@ -362,7 +408,8 @@ function visitClassDeclaration(traverse, node, path, state) {
   state = utils.updateState(state, {
     mungeNamespace: className,
     className: className,
-    superClass: superClass
+    superClass: superClass,
+    gettersAndSetters: {}
   });
 
   _renderClassBody(traverse, node, path, state);
@@ -388,7 +435,8 @@ function visitClassExpression(traverse, node, path, state) {
   state = utils.updateState(state, {
     mungeNamespace: className,
     className: className,
-    superClass: superClass
+    superClass: superClass,
+    gettersAndSetters: {}
   });
 
   _renderClassBody(traverse, node, path, state);
