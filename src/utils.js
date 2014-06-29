@@ -80,6 +80,11 @@ function createState(source, rootNode, transformOptions) {
      */
     indentBy: 0,
     /**
+     * Dict of getters/setters in current class
+     * @type {Object}
+     */
+    gettersAndSetters: null,
+    /**
      * Global state (not affected by updateState)
      * @type {Object}
      */

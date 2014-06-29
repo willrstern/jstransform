@@ -1167,6 +1167,24 @@ describe('es6-classes', function() {
         expect(Foo.title).toBe(21);
       });
 
+      it('properly handles multiple passes over classes  with getters/setters' +
+         ' in ES5 compat mode', function() {
+        var source = [
+          'class Foo {',
+          '  get title() {',
+          '    return 42;',
+          '  }',
+          '}',
+        ].join('\n');
+
+        var code = transform(source, {es5: true});
+        code = transform(source, {es5: true});
+
+        expect(function() {
+          eval(code);
+        }).not.toThrow();
+      });
+
       it('throws upon encountering getter methods', function() {
         expect(function() {
           transform([

@@ -32,12 +32,10 @@ var SUPER_PROTO_IDENT_PREFIX = '____SuperProtoOf';
 
 var _anonClassUUIDCounter = 0;
 var _mungedSymbolMaps = {};
-var _settersAndGetters = {};
 
 function resetSymbols() {
   _anonClassUUIDCounter = 0;
   _mungedSymbolMaps = {};
-  _settersAndGetters = {};
 }
 
 /**
@@ -53,8 +51,8 @@ function _generateAnonymousClassName(state) {
 }
 
 /**
- * Used the store a reference to the property descriptor for getter ans setter
- * methods.
+ * Returns a temporary variable name for storing the property descriptor of
+ * getters/setters.
  *
  * @param {object} state
  * @return {string}
@@ -222,7 +220,7 @@ function visitClassFunctionExpression(traverse, node, path, state) {
       var descriptorVar = _generateDescriptorVar(state);
       // var ____ClassDescr = Object.getOwnPropertyDescriptor(...);
       var descriptorDeclaration =
-        _settersAndGetters[objectAccessor + methodAccessor] ?
+        state.gettersAndSetters[objectAccessor + methodAccessor] ?
         'var ' + descriptorVar + '=Object.getOwnPropertyDescriptor(' +
         objectAccessor + ',' + JSON.stringify(methodAccessor) + ');' :
         '';
@@ -242,7 +240,7 @@ function visitClassFunctionExpression(traverse, node, path, state) {
         state
       );
       // remember that we already created a getter or setter for this property
-      _settersAndGetters[objectAccessor + methodAccessor] = true;
+      state.gettersAndSetters[objectAccessor + methodAccessor] = true;
     } else {
       utils.append(
         objectAccessor + methodAccessor + '=function',
@@ -416,7 +414,8 @@ function visitClassDeclaration(traverse, node, path, state) {
   state = utils.updateState(state, {
     mungeNamespace: className,
     className: className,
-    superClass: superClass
+    superClass: superClass,
+    gettersAndSetters: {}
   });
 
   _renderClassBody(traverse, node, path, state);
@@ -442,7 +441,8 @@ function visitClassExpression(traverse, node, path, state) {
   state = utils.updateState(state, {
     mungeNamespace: className,
     className: className,
-    superClass: superClass
+    superClass: superClass,
+    gettersAndSetters: {}
   });
 
   _renderClassBody(traverse, node, path, state);
