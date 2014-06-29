@@ -1214,6 +1214,30 @@ describe('es6-classes', function() {
           '(line: 2, col: 2)'
         );
       });
+
+      it('preserves generators if transform option is set', function() {
+        var regenerator = require('regenerator');
+        regenerator.runtime();
+        var code =  regenerator(transform([
+          'class Foo {',
+          '  static *title() {',
+          '    yield 21;',
+          '  }',
+          '',
+          '  *gen() {',
+          '    yield 42;',
+          '  }',
+          '}'
+        ].join('\n'), {es5: true, preserveGenerators: true}));
+
+        eval(code);
+
+        var fooInst = new Foo();
+        expect(fooInst.gen().next()).toEqual({value: 42, done: false});
+        expect(Foo.title().next()).toEqual({value: 21, done: false});
+        delete global.wrapGenerator;
+    });
+
     });
   });
 

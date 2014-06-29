@@ -183,6 +183,8 @@ function visitClassFunctionExpression(traverse, node, path, state) {
   var methodNode = path[0];
   var isGetter = state.g.opts.es5 && methodNode.kind === 'get';
   var isSetter = state.g.opts.es5 && methodNode.kind === 'set';
+  var functionKeyword = 'function' +
+    (state.g.opts.preserveGenerators && node.generator ? '*' : '');
 
   state = utils.updateState(state, {
     methodFuncNode: node
@@ -236,14 +238,14 @@ function visitClassFunctionExpression(traverse, node, path, state) {
           JSON.stringify(methodAccessor) + ',' +
           '{enumerable:true,configurable:true,' +
           existingGetterOrSetter +
-          methodNode.kind + ':function',
+          methodNode.kind + ':' + functionKeyword,
         state
       );
       // remember that we already created a getter or setter for this property
       state.gettersAndSetters[objectAccessor + methodAccessor] = true;
     } else {
       utils.append(
-        objectAccessor + methodAccessor + '=function',
+        objectAccessor + methodAccessor + '=' + functionKeyword,
         state
       );
     }
