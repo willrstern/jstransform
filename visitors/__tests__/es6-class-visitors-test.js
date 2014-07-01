@@ -1027,6 +1027,23 @@ describe('es6-classes', function() {
         expect(Foo.staticFn()).toBe(true);
       });
 
+      it('preserves generators if transform option is set', function() {
+        var code =  transform([
+          'class Foo {',
+          '  static *title() {',
+          '    yield 21;',
+          '  }',
+          '',
+          '  *gen() {',
+          '    yield 42;',
+          '  }',
+          '}'
+        ].join('\n'));
+
+        expect(code).toMatch(/Foo.title\s*=\s*function\*\(/);
+        expect(code).toMatch(/Foo.prototype.gen\s*=\s*function\*\(/);
+      });
+
       // TODO: Support this with an option
       //       There isn't a simple way to support both this and IE8 at the same
       //       time, so for now we're not supporting it at all. That said, if

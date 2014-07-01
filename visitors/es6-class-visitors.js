@@ -195,7 +195,7 @@ function visitClassFunctionExpression(traverse, node, path, state) {
 
     utils.append(
       state.className + prototypeOrStatic +
-      methodAccessor + '=function',
+      methodAccessor + '=function' + (node.generator ? '*' : ''),
       state
     );
   }
